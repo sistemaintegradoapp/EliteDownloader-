@@ -1674,6 +1674,12 @@ def main():
         #import sys
         #sys.modules['os'] = os
         #print("os reimportado com sucesso")
+ try:
+        with st.sidebar:
+            st.success("✅ Sidebar carregada!")
+            st.write("Teste de conteúdo na sidebar")
+    except Exception as e:
+        st.error(f"Erro na sidebar: {e}")
         
 # Inicializar todas as variáveis de sessão primeiro
     if 'key_valid' not in st.session_state:
