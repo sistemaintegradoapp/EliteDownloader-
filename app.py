@@ -114,6 +114,23 @@ import subprocess
 from bs4 import BeautifulSoup
 
 # ============================================================
+# Atualizar yt-dlp automaticamente
+# ============================================================
+
+try:
+    import yt_dlp
+    # Verificar e atualizar se necessário
+    from yt_dlp import version
+    current_version = version.__version__
+    st.sidebar.info(f"yt-dlp versão: {current_version}")
+except:
+    # Se falhar, instalar a versão mais recente
+    import subprocess
+    import sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"])
+    import yt_dlp
+
+# ============================================================
 # CONFIGURAÇÕES GLOBAIS
 # ============================================================
 st.set_page_config(
@@ -1421,72 +1438,124 @@ class YDLLogger:
     def error(self, msg): self.lines.append("ERR: "+str(msg))
 
 def run_ytdlp(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, bytes, str, str]:
-    """Baixa o conteúdo em memória e retorna os bytes do arquivo"""
+    """Baixa o conteúdo em memória com fallback para métodos alternativos"""
     progress_hook = DownloadProgressHook()
     
-    ydl_opts = {
-        "noplaylist": True,
-        "quiet": True,
-        "nocheckcertificate": True,
-        "progress_hooks": [progress_hook.hook],
-        "outtmpl": "-",  # Output para stdout (em memória)
-    }
-    
-    if fmt_choice == "audio (mp3)":
-        ydl_opts.update({
-            "format": "bestaudio/best",
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": '192'
-            }]
-        })
-    else:
-        target_map = {
-            "best": "bestvideo+bestaudio/best",
-            "1080p": "bv[height<=1080]+ba/b",
-            "720p": "bv[height<=720]+ba/b", 
-            "480p": "bv[height<=480]+ba/b",
-            "360p": "bv[height<=360]+ba/b"
-        }
-        ydl_opts.update({
-            "format": target_map.get(quality_choice, "bestvideo+bestaudio/best"),
-            "merge_output_format": "mp4",
-        })
-    
     try:
-        logger = YDLLogger()
-        ydl_opts["logger"] = logger
+        # Primeiro tentamos o método normal
+        ydl_opts = {
+            "noplaylist": True,
+            "quiet": True,
+            "nocheckcertificate": True,
+            "progress_hooks": [progress_hook.hook],
+            "outtmpl": "-",
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "web"],
+                }
+            },
+        }
         
-        # Criar barra de progresso
+        if fmt_choice == "audio (mp3)":
+            ydl_opts.update({
+                "format": "bestaudio/best",
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": '192'
+                }]
+            })
+        else:
+            target_map = {
+                "best": "bestvideo+bestaudio/best",
+                "1080p": "bv[height<=1080]+ba/b",
+                "720p": "bv[height<=720]+ba/b", 
+                "480p": "bv[height<=480]+ba/b",
+                "360p": "bv[height<=360]+ba/b"
+            }
+            ydl_opts.update({
+                "format": target_map.get(quality_choice, "bestvideo+bestaudio/best"),
+                "merge_output_format": "mp4",
+            })
+        
         progress_hook.progress_bar = st.progress(0)
         progress_hook.status_text = st.empty()
         
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            ydl_opts["outtmpl"] = tmp_file.name
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
             
-            # Obter o filename para o nome do arquivo
+            with open(tmp_file.name, 'rb') as f:
+                file_content = f.read()
+            
+            os.unlink(tmp_file.name)
+            info = ydl.extract_info(url, download=False)
             filename = ydl.prepare_filename(info)
-            file_extension = os.path.splitext(filename)[1]
             
-            # Para streaming em memória, precisamos de uma abordagem diferente
-            # Vamos usar um arquivo temporário em memória
+            return True, file_content, filename, "Download concluído"
+            
+    except Exception as e:
+        # Se falhar, tentamos métodos alternativos
+        if "403" in str(e) or "Forbidden" in str(e):
+            return try_multiple_download_methods(url, fmt_choice, quality_choice)
+        else:
+            return False, None, f"Erro: {e}", ""
+
+
+def try_multiple_download_methods(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, bytes, str, str]:
+    """Tenta diferentes métodos de download para contornar bloqueios"""
+    methods = [
+        {"format": "best[height<=720]", "extractor_args": {"youtube": {"player_client": ["web"]}}},
+        {"format": "best[height<=480]", "extractor_args": {"youtube": {"player_client": ["android"]}}},
+        {"format": "best", "extractor_args": {"youtube": {"player_client": ["tv"]}}},
+    ]
+    
+    for i, method in enumerate(methods):
+        try:
+            ydl_opts = {
+                "noplaylist": True,
+                "quiet": True,
+                "nocheckcertificate": True,
+                "outtmpl": "-",
+                "http_headers": {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                },
+                **method
+            }
+            
+            if fmt_choice == "audio (mp3)":
+                ydl_opts.update({
+                    "format": "bestaudio/best",
+                    "postprocessors": [{
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": '192'
+                    }]
+                })
+            
             with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
                 ydl_opts["outtmpl"] = tmp_file.name
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl_download:
-                    ydl_download.download([url])
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
                 
-                # Ler o conteúdo do arquivo temporário
                 with open(tmp_file.name, 'rb') as f:
                     file_content = f.read()
                 
-                # Limpar o arquivo temporário
                 os.unlink(tmp_file.name)
-            
-            return True, file_content, filename, "".join(logger.lines)
-            
-    except Exception as e:
-        return False, None, f"Erro: {e}", ""
+                info = ydl.extract_info(url, download=False)
+                filename = ydl.prepare_filename(info)
+                
+                return True, file_content, filename, f"Sucesso com método {i+1}"
+                
+        except Exception as e:
+            continue
+    
+    return False, None, f"Todos os métodos falharam para: {url}", ""        
 
 # ============================================================
 # INTERFACE PRINCIPAL - ATUALIZADA
