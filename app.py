@@ -1535,8 +1535,7 @@ def run_ytdlp(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, byt
                     ydl.download([url])
                     
                     # Verificar se download foi bem sucedido
-                    import os
-                    file_size = os.path.getsize(tmp_file.name)
+                    file_size = os.path.getsize(tmp_file.name)  # AGORA 'os' ESTÁ DISPONÍVEL
                     if file_size == 0:
                         raise Exception("Arquivo vazio - possivel bloqueio")
                     
@@ -1633,8 +1632,7 @@ def try_cookie_method(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, str]
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
             
-            import os
-            file_size = os.path.getsize(tmp_file.name)
+            file_size = os.path.getsize(tmp_file.name)  # 'os' DISPONÍVEL AQUI
             if file_size > 1024:  # Pelo menos 1KB de conteúdo
                 with open(tmp_file.name, 'rb') as f:
                     file_content = f.read()
@@ -1646,12 +1644,25 @@ def try_cookie_method(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, str]
                 return False, None, "Bloqueio muito restritivo - YouTube detectou como bot", ""
                 
     except Exception as e:
-        return False, None, f"Método alternativo falhou: {str(e)}", ""        
+        return False, None, f"Método alternativo falhou: {str(e)}", ""  
 
 # ============================================================
 # INTERFACE PRINCIPAL - ATUALIZADA
 # ============================================================
 def main():
+    
+# DEBUG: Verificar se os está acessível
+    try:
+        print(f"os disponível: {os.__name__}")
+        print(f"Diretório atual: {os.getcwd()}")
+    except NameError as e:
+        print(f"ERRO: os não disponível - {e}")
+        # Reimportar urgentemente
+        import os
+        import sys
+        sys.modules['os'] = os
+        print("os reimportado com sucesso")
+        
 # Inicializar todas as variáveis de sessão primeiro
     if 'key_valid' not in st.session_state:
         st.session_state.key_valid = False
