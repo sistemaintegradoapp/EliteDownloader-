@@ -120,16 +120,33 @@ from bs4 import BeautifulSoup
 
 try:
     import yt_dlp
-    # Verificar e atualizar se necessário
-    from yt_dlp import version
-    current_version = version.__version__
-    st.sidebar.info(f"yt-dlp versão: {current_version}")
-except:
-    # Se falhar, instalar a versão mais recente
-    import subprocess
-    import sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"])
-    import yt_dlp
+    YTDLP_OK = True
+    # Verificar versão sem causar erro se não existir
+    try:
+        from yt_dlp import version
+        current_version = version.__version__
+        # st.sidebar.info(f"yt-dlp versão: {current_version}")  # REMOVER ISSO - causa erro no import
+    except:
+        pass
+except ImportError:
+    # Se falhar, tentar instalar de forma mais segura
+    YTDLP_OK = False
+    try:
+        import subprocess
+        import sys
+        # Usar comando mais simples e seguro
+        result = subprocess.run([sys.executable, "-m", "pip", "install", "yt-dlp"], 
+                              capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            import yt_dlp
+            YTDLP_OK = True
+        else:
+            print(f"Falha ao instalar yt-dlp: {result.stderr}")
+    except Exception as e:
+        print(f"Erro na instalação do yt-dlp: {e}")
+except Exception as e:
+    print(f"Erro ao importar yt-dlp: {e}")
+    YTDLP_OK = False
 
 # ============================================================
 # CONFIGURAÇÕES GLOBAIS
@@ -1448,77 +1465,51 @@ class YDLLogger:
 
 def run_ytdlp(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, bytes, str, str]:
     """Baixa o conteúdo em memória"""
+    # Verificar se yt-dlp está disponível
+    if not YTDLP_OK:
+        return False, None, "Erro: yt-dlp não está disponível. Recarregue a página.", ""
+    """Baixa o conteúdo em memória"""
     progress_hook = DownloadProgressHook()
     
     try:
-        # Configurações (mantenha suas configurações atuais)
+        # Configuração MÍNIMA
         ydl_opts = {
-            "noplaylist": True,
             "quiet": True,
-            "nocheckcertificate": True,
-            "progress_hooks": [progress_hook.hook],
-            "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            },
+            "no_warnings": True,
+            "format": "best" if fmt_choice == "mp4" else "bestaudio/best",
         }
         
-        # Configurar formato
         if fmt_choice == "audio (mp3)":
-            ydl_opts.update({
-                "format": "bestaudio/best",
-                "postprocessors": [{
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": '192'
-                }]
-            })
-        else:
-            ydl_opts.update({
-                "format": "best[height<=720]",
-                "merge_output_format": "mp4",
-            })
+            ydl_opts["postprocessors"] = [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+            }]
         
-        progress_hook.progress_bar = st.progress(0)
-        progress_hook.status_text = st.empty()
+        # Nome de arquivo simples
+        filename = f"download.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
         
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # CORREÇÃO: Extrair informações de forma segura
-            info = ydl.extract_info(url, download=False)
+        # Download direto
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.tmp') as tmp_file:
+            ydl_opts["outtmpl"] = tmp_file.name
             
-            # VERIFICAÇÃO SEGURA - isso evita o erro "string indices must be integers"
-            if isinstance(info, dict):
-                title = info.get('title', 'video')
-                # Limpar caracteres inválidos do filename
-                import re
-                title = re.sub(r'[<>:"/\\|?*]', '', title)
-                filename = f"{title}.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+            
+            # Verificar se o arquivo tem conteúdo
+            file_size = os.path.getsize(tmp_file.name)
+            if file_size > 1024:  # Pelo menos 1KB
+                with open(tmp_file.name, 'rb') as f:
+                    file_content = f.read()
+                
+                os.unlink(tmp_file.name)
+                return True, file_content, filename, f"Download concluído ({file_size} bytes)"
             else:
-                # Fallback se info não for um dicionário
-                filename = f"download.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
+                os.unlink(tmp_file.name)
+                return False, None, "Arquivo muito pequeno - possível bloqueio", ""
             
-            # Fazer download para arquivo temporário
-            import tempfile
-            with tempfile.NamedTemporaryFile(delete=False, 
-                                           suffix='.mp3' if fmt_choice == 'audio (mp3)' else '.mp4') as tmp_file:
-                ydl_opts["outtmpl"] = tmp_file.name
-                
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl_download:
-                    ydl_download.download([url])
-                
-                # Verificar se o arquivo foi criado corretamente
-                if os.path.exists(tmp_file.name) and os.path.getsize(tmp_file.name) > 0:
-                    with open(tmp_file.name, 'rb') as f:
-                        file_content = f.read()
-                    
-                    os.unlink(tmp_file.name)
-                    return True, file_content, filename, "Download concluído!"
-                else:
-                    os.unlink(tmp_file.name)
-                    return False, None, "Arquivo vazio ou não criado", ""
-                    
     except Exception as e:
-        error_msg = str(e)
-        return False, None, f"Erro: {error_msg}", ""
+        return False, None, f"Erro no download: {str(e)}", ""
 
 def try_simple_download(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, str]:
     """Método ultra-simples para contornar throttling extremo"""
