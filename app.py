@@ -1,6 +1,7 @@
 # ============================================================
 # 🔧 COMPATIBILIDADE PARA Python 3.13 - FIX DOS MÓDULOS REMOVIDOS
 # ============================================================
+import os
 import sys
 import html
 import io
@@ -83,7 +84,7 @@ if sys.version_info >= (3, 13):
     sys.modules['pyaudioop'] = FakeAudioopModule()  # Para pyaudioop também
     
     print("✅ Compatibilidade Python 3.13 aplicada (cgi + audioop)")
-import os
+
 os.system('apt-get update && apt-get install -y ffmpeg')
 import shutil
 import time
