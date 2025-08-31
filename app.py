@@ -1,3 +1,52 @@
+# ============================================================
+# 🔧 COMPATIBILIDADE PARA Python 3.13 - FIX DO CGI
+# ============================================================
+import sys
+import html
+import io
+
+# Verifica se estamos no Python 3.13+ onde cgi foi removido
+if sys.version_info >= (3, 13):
+    # Cria um módulo cgi substituto
+    class FieldStorage:
+        def __init__(self, fp=None, headers=None, outerboundary="", environ=None):
+            self.fp = fp or io.BytesIO()
+            self.headers = headers or {}
+            self.list = []
+            
+        def getvalue(self, key, default=None):
+            for item in self.list:
+                if item.name == key:
+                    return item.value
+            return default
+    
+    class MiniFieldStorage:
+        def __init__(self, name, value):
+            self.name = name
+            self.value = value
+    
+    def parse_header(line):
+        if ';' in line:
+            main_value, params = line.split(';', 1)
+            params_dict = {}
+            for param in params.split(';'):
+                if '=' in param:
+                    key, value = param.split('=', 1)
+                    params_dict[key.strip()] = value.strip(' "')
+            return main_value.strip(), params_dict
+        return line.strip(), {}
+    
+    # Cria módulo cgi fake
+    class FakeCGIModule:
+        FieldStorage = FieldStorage
+        MiniFieldStorage = MiniFieldStorage
+        parse_header = parse_header
+        escape = html.escape
+    
+    # Injeta o módulo fake no sys.modules
+    sys.modules['cgi'] = FakeCGIModule()
+    
+    print("✅ Compatibilidade CGI aplicada para Python 3.13")
 import os
 os.system('apt-get update && apt-get install -y ffmpeg')
 import shutil
