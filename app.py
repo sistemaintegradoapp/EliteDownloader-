@@ -1,13 +1,14 @@
 # ============================================================
-# 🔧 COMPATIBILIDADE PARA Python 3.13 - FIX DO CGI
+# 🔧 COMPATIBILIDADE PARA Python 3.13 - FIX DOS MÓDULOS REMOVIDOS
 # ============================================================
 import sys
 import html
 import io
+import struct
 
-# Verifica se estamos no Python 3.13+ onde cgi foi removido
+# Verifica se estamos no Python 3.13+
 if sys.version_info >= (3, 13):
-    # Cria um módulo cgi substituto
+    # ==================== FIX PARA CGI ====================
     class FieldStorage:
         def __init__(self, fp=None, headers=None, outerboundary="", environ=None):
             self.fp = fp or io.BytesIO()
@@ -36,17 +37,52 @@ if sys.version_info >= (3, 13):
             return main_value.strip(), params_dict
         return line.strip(), {}
     
-    # Cria módulo cgi fake
+    # ==================== FIX PARA AUDIOOP ====================
+    def lin2lin(data, width, new_width):
+        """Simula audioop.lin2lin"""
+        if width == new_width:
+            return data
+        # Conversão simplificada entre formatos
+        return data[:len(data) // width * new_width]
+    
+    def getsample(data, width, index):
+        """Simula audioop.getsample"""
+        if width == 1:
+            return struct.unpack('B', data[index:index+1])[0] - 128
+        elif width == 2:
+            return struct.unpack('h', data[index:index+2])[0]
+        elif width == 4:
+            return struct.unpack('i', data[index:index+4])[0]
+        return 0
+    
+    def max(data, width):
+        """Simula audioop.max"""
+        max_val = 0
+        for i in range(0, len(data), width):
+            sample = abs(getsample(data, width, i))
+            if sample > max_val:
+                max_val = sample
+        return max_val
+    
+    # Cria módulos fake
     class FakeCGIModule:
         FieldStorage = FieldStorage
         MiniFieldStorage = MiniFieldStorage
         parse_header = parse_header
         escape = html.escape
     
-    # Injeta o módulo fake no sys.modules
-    sys.modules['cgi'] = FakeCGIModule()
+    class FakeAudioopModule:
+        lin2lin = lin2lin
+        getsample = getsample
+        max = max
+        # Adicione outras funções se necessário
     
-    print("✅ Compatibilidade CGI aplicada para Python 3.13")
+    # Injeta os módulos fake no sys.modules
+    sys.modules['cgi'] = FakeCGIModule()
+    sys.modules['audioop'] = FakeAudioopModule()
+    sys.modules['pyaudioop'] = FakeAudioopModule()  # Para pyaudioop também
+    
+    print("✅ Compatibilidade Python 3.13 aplicada (cgi + audioop)")
 import os
 os.system('apt-get update && apt-get install -y ffmpeg')
 import shutil
@@ -886,9 +922,9 @@ def create_payment_preference(email: str, price: float, description: str, plan: 
         }],
         "payer": {"email": email},
         "back_urls": {
-            "success": "https://37d4991f431d.ngrok-free.app/?payment_status=success",
-            "failure": "https://37d4991f431d.ngrok-free.app/?payment_status=failure", 
-            "pending": "https://37d4991f431d.ngrok-free.app/?payment_status=pending"
+            "success": "https://elitedownloader.streamlit.app//?payment_status=success",
+            "failure": "https://elitedownloader.streamlit.app/?payment_status=failure", 
+            "pending": "https://elitedownloader.streamlit.app/?payment_status=pending"
         },
         "external_reference": payment_id,  # Este é o ID que usaremos para verificar
         "auto_return": "approved",
