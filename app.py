@@ -364,57 +364,55 @@ def show_free_downloads_ui():
         free_quality = st.selectbox("Qualidade:", ["best", "720p", "480p", "360p"], key="free_quality")
     
     if st.button("🚀 Download Gratuito", key="btn_free_download", type="secondary"):
-        if not free_url.strip():
-            st.error("Por favor, cole um link válido.")
-            return
-            
-        if not can_use_free_download():
-            st.error("❌ Você já usou todos os seus downloads gratuitos!")
-            st.info("💡 Assine um plano premium para downloads ilimitados!")
-            return
+    if not free_url.strip():
+        st.error("Por favor, cole um link válido.")
+        return
         
-        # Área dedicada para o progresso do download
-        download_container = st.container()
+    if not can_use_free_download():
+        st.error("❌ Você já usou todos os seus downloads gratuitos!")
+        st.info("💡 Assine um plano premium para downloads ilimitados!")
+        return
+    
+    with st.spinner("🔄 Tentando download..."):
+        success, file_content, filename, message = run_ytdlp(free_url, free_fmt, free_quality)
         
-        with download_container:
-            st.info("🔄 Iniciando download...")
+        if success and file_content:
+            use_free_download(free_url)
+            mime_type = "video/mp4" if free_fmt == "mp4" else "audio/mpeg"
             
-            # Esta função agora retorna os bytes do arquivo
-            success, file_content, filename, logs = run_ytdlp(
-                free_url, 
-                free_fmt, 
-                free_quality
+            st.download_button(
+                label="📥 Clique para baixar",
+                data=file_content,
+                file_name=filename,
+                mime=mime_type,
             )
-            
-            if success and file_content:
-                # USAR O DOWNLOAD GRATUITO APÓS SUCESSO
+            st.success("✅ " + message)
+        else:
+            # Tentar método alternativo
+            success_alt, content_alt, filename_alt, message_alt = alternative_download(free_url, free_fmt)
+            if success_alt:
                 use_free_download(free_url)
-                
-                # Oferecer download direto via Streamlit
-                file_extension = os.path.splitext(filename)[1]
                 mime_type = "video/mp4" if free_fmt == "mp4" else "audio/mpeg"
-                
                 st.download_button(
-                    label="📥 Clique aqui para baixar o arquivo",
-                    data=file_content,
-                    file_name=filename,
+                    label="📥 Download via método alternativo",
+                    data=content_alt,
+                    file_name=filename_alt,
                     mime=mime_type,
-                    key=f"download_{free_url}"
                 )
-                
-                # ATUALIZAR O CONTADOR NA MENSAGEM
-                remaining_after = st.session_state.free_downloads
-                st.success(f"✅ Download concluído! Restam {remaining_after} downloads gratuitos.")
-                
             else:
-                st.error(f"❌ Erro no download: {filename}")
+                st.error("❌ " + message)
+                st.info("💡 Tente um link diferente ou espere alguns minutos")
 
-st.warning("""
-    **⚠️ Atenção:** Alguns vídeos do YouTube podem ter proteção contra download.
-    Se encontrar erro, tente:
-    - Links de canais menores funcionam melhor
-    - Vídeos muito recentes podem ter restrições
-    - Tente novamente em alguns minutos
+ st.warning("""
+    **⚠️ Atenção:** Downloads do YouTube podem falhar devido a:
+    - Bloqueios anti-bot do YouTube
+    - Vídeos muito recentes ou populares
+    - Restrições regionais
+    
+    **💡 Dicas:**
+    - Tente links de canais menores
+    - Vídeos mais antigos funcionam melhor
+    - Se falhar, tente novamente em alguns minutos
     """)
 
 # ============================================================
@@ -1464,82 +1462,71 @@ class YDLLogger:
     def error(self, msg): self.lines.append("ERR: "+str(msg))
 
 def run_ytdlp(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, bytes, str, str]:
-    """Baixa o conteúdo em memória"""
-    # Verificar se yt-dlp está disponível
+    """Sistema robusto com múltiplas tentativas e fallbacks"""
     if not YTDLP_OK:
-        return False, None, "Erro: yt-dlp não está disponível. Recarregue a página.", ""
-    """Baixa o conteúdo em memória"""
-    progress_hook = DownloadProgressHook()
+        return False, None, "yt-dlp não disponível", ""
     
-    try:
-        # Configurações (mantenha suas configurações atuais)
-        ydl_opts = {
-            "noplaylist": True,
-            "quiet": True,
-            "nocheckcertificate": True,
-            "progress_hooks": [progress_hook.hook],
-            "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            },
-        }
-        
-        # Configurar formato
-        if fmt_choice == "audio (mp3)":
-            ydl_opts.update({
-                "format": "bestaudio/best",
-                "postprocessors": [{
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": '192'
-                }]
-            })
-        else:
-            ydl_opts.update({
-                "format": "best[height<=720]",
-                "merge_output_format": "mp4",
-            })
-        
-        progress_hook.progress_bar = st.progress(0)
-        progress_hook.status_text = st.empty()
+    # Tentar diferentes métodos
+    methods = [
+        {"format": "best[height<=720]", "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+        {"format": "best[height<=480]", "user_agent": "Mozilla/5.0 (Linux; Android 10; SM-A205U) AppleWebKit/537.36"},
+        {"format": "worst", "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/537.36"},
+    ]
+    
+    for attempt, method in enumerate(methods, 1):
+        try:
+            result = try_download_method(url, fmt_choice, method)
+            if result[0]:  # Se sucesso
+                return result
+            else:
+                print(f"Tentativa {attempt} falhou, tentando próximo método...")
+        except Exception as e:
+            print(f"Erro na tentativa {attempt}: {e}")
+    
+    return False, None, "Todos os métodos falharam. O YouTube está bloqueando fortemente.", ""
+
+def try_download_method(url: str, fmt_choice: str, method: dict) -> Tuple[bool, bytes, str, str]:
+    """Tenta um método específico de download"""
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "format": method["format"],
+        "http_headers": {
+            "User-Agent": method["user_agent"],
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        },
+        "retries": 3,
+        "fragment_retries": 3,
+        "skip_unavailable_fragments": True,
+    }
+    
+    if fmt_choice == "audio (mp3)":
+        ydl_opts["postprocessors"] = [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+        }]
+        ydl_opts["format"] = "bestaudio/best"
+    
+    filename = f"download.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
+    
+    import tempfile
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.tmp') as tmp_file:
+        ydl_opts["outtmpl"] = tmp_file.name
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # CORREÇÃO: Extrair informações de forma segura
-            info = ydl.extract_info(url, download=False)
+            ydl.download([url])
+        
+        file_size = os.path.getsize(tmp_file.name)
+        if file_size > 10240:  # Pelo menos 10KB
+            with open(tmp_file.name, 'rb') as f:
+                file_content = f.read()
             
-            # VERIFICAÇÃO SEGURA - isso evita o erro "string indices must be integers"
-            if isinstance(info, dict):
-                title = info.get('title', 'video')
-                # Limpar caracteres inválidos do filename
-                import re
-                title = re.sub(r'[<>:"/\\|?*]', '', title)
-                filename = f"{title}.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
-            else:
-                # Fallback se info não for um dicionário
-                filename = f"download.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
-            
-            # Fazer download para arquivo temporário
-            import tempfile
-            with tempfile.NamedTemporaryFile(delete=False, 
-                                           suffix='.mp3' if fmt_choice == 'audio (mp3)' else '.mp4') as tmp_file:
-                ydl_opts["outtmpl"] = tmp_file.name
-                
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl_download:
-                    ydl_download.download([url])
-                
-                # Verificar se o arquivo foi criado corretamente
-                if os.path.exists(tmp_file.name) and os.path.getsize(tmp_file.name) > 0:
-                    with open(tmp_file.name, 'rb') as f:
-                        file_content = f.read()
-                    
-                    os.unlink(tmp_file.name)
-                    return True, file_content, filename, "Download concluído!"
-                else:
-                    os.unlink(tmp_file.name)
-                    return False, None, "Arquivo vazio ou não criado", ""
-                    
-    except Exception as e:
-        error_msg = str(e)
-        return False, None, f"Erro: {error_msg}", ""
+            os.unlink(tmp_file.name)
+            return True, file_content, filename, "Sucesso!"
+        else:
+            os.unlink(tmp_file.name)
+            return False, None, "Arquivo vazio", ""
 
 def try_simple_download(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, str]:
     """Método ultra-simples para contornar throttling extremo"""
@@ -1630,7 +1617,47 @@ def try_cookie_method(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, str]
                 
     except Exception as e:
         return False, None, f"Método alternativo falhou: {str(e)}", ""  
+        
+        
+def alternative_download(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, str]:
+    """Método alternativo para quando yt-dlp falha"""
+    try:
+        # Tentar via API externa (fallback)
+        import requests
+        
+        if "youtube.com" in url or "youtu.be" in url:
+            # Extrair ID do vídeo
+            video_id = extract_youtube_id(url)
+            if video_id:
+                # Tentar via API pública (exemplo)
+                api_url = f"https://youtube.com/watch?v={video_id}"
+                
+                # Simular download básico (isso é apenas exemplo)
+                # Na prática, você precisaria de um serviço externo
+                response = requests.get(api_url, timeout=30)
+                if response.status_code == 200:
+                    # Retornar mensagem informativa
+                    return False, None, "Download bloqueado. Use nosso app desktop para este vídeo.", ""
+        
+        return False, None, "Serviço temporariamente indisponível para este link", ""
+        
+    except Exception as e:
+        return False, None, f"Erro no método alternativo: {str(e)}", ""
 
+def extract_youtube_id(url: str) -> str:
+    """Extrai ID do vídeo do YouTube"""
+    patterns = [
+        r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
+        r'(?:embed\/)([0-9A-Za-z_-]{11})',
+        r'(?:watch\?v=)([0-9A-Za-z_-]{11})'
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+    
 # ============================================================
 # INTERFACE PRINCIPAL - ATUALIZADA
 # ============================================================
