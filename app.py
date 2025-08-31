@@ -1438,17 +1438,16 @@ class YDLLogger:
     def error(self, msg): self.lines.append("ERR: "+str(msg))
 
 def run_ytdlp(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, bytes, str, str]:
-    """Baixa o conteúdo em memória com fallback para métodos alternativos"""
+    """Baixa o conteúdo em memória usando BytesIO"""
     progress_hook = DownloadProgressHook()
     
     try:
-        # Primeiro tentamos o método normal
+        # Configurações principais
         ydl_opts = {
             "noplaylist": True,
             "quiet": True,
             "nocheckcertificate": True,
             "progress_hooks": [progress_hook.hook],
-            "outtmpl": "-",
             "http_headers": {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -1460,6 +1459,7 @@ def run_ytdlp(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, byt
             },
         }
         
+        # Configurar formato
         if fmt_choice == "audio (mp3)":
             ydl_opts.update({
                 "format": "bestaudio/best",
@@ -1482,37 +1482,78 @@ def run_ytdlp(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, byt
                 "merge_output_format": "mp4",
             })
         
+        # Barra de progresso
         progress_hook.progress_bar = st.progress(0)
         progress_hook.status_text = st.empty()
         
-        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-            ydl_opts["outtmpl"] = tmp_file.name
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-            
-            with open(tmp_file.name, 'rb') as f:
-                file_content = f.read()
-            
-            os.unlink(tmp_file.name)
+        # Usar BytesIO para armazenar em memória
+        from io import BytesIO
+        output_buffer = BytesIO()
+        
+        # Configurar para escrever no buffer
+        ydl_opts["outtmpl"] = "-"  # Output para stdout
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Extrair informações primeiro
             info = ydl.extract_info(url, download=False)
             filename = ydl.prepare_filename(info)
             
-            return True, file_content, filename, "Download concluído"
+            # Fazer o download diretamente para memória
+            ydl_opts["outtmpl"] = "-"
+            result = ydl.download([url])
+            
+            # Se chegou aqui, o download foi bem-sucedido
+            # Vamos usar um approach diferente - baixar para buffer
+            ydl_opts["outtmpl"] = "-"
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl_final:
+                # Método alternativo: usar extract_info com download=True
+                ydl_final.download([url])
+            
+            # Para o Streamlit Cloud, vamos usar approach mais simples
+            # Criar arquivo temporário com nome único
+            import tempfile
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4' if fmt_choice == 'mp4' else '.mp3') as tmp_file:
+                ydl_opts["outtmpl"] = tmp_file.name
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl_download:
+                    ydl_download.download([url])
+                
+                # Ler o conteúdo do arquivo
+                with open(tmp_file.name, 'rb') as f:
+                    file_content = f.read()
+                
+                # Limpar arquivo temporário
+                import os
+                os.unlink(tmp_file.name)
+            
+            return True, file_content, filename, "Download concluído com sucesso"
             
     except Exception as e:
-        # Se falhar, tentamos métodos alternativos
-        if "403" in str(e) or "Forbidden" in str(e):
+        error_msg = str(e)
+        if "403" in error_msg or "Forbidden" in error_msg:
+            # Tentar método alternativo
             return try_multiple_download_methods(url, fmt_choice, quality_choice)
         else:
-            return False, None, f"Erro: {e}", ""
+            return False, None, f"Erro: {error_msg}", ""
 
 
 def try_multiple_download_methods(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, bytes, str, str]:
     """Tenta diferentes métodos de download para contornar bloqueios"""
     methods = [
-        {"format": "best[height<=720]", "extractor_args": {"youtube": {"player_client": ["web"]}}},
-        {"format": "best[height<=480]", "extractor_args": {"youtube": {"player_client": ["android"]}}},
-        {"format": "best", "extractor_args": {"youtube": {"player_client": ["tv"]}}},
+        {
+            "format": "best[height<=720]", 
+            "extractor_args": {"youtube": {"player_client": ["web"]}},
+            "http_headers": {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        },
+        {
+            "format": "best[height<=480]", 
+            "extractor_args": {"youtube": {"player_client": ["android"]}},
+            "http_headers": {"User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36"}
+        },
+        {
+            "format": "best", 
+            "extractor_args": {"youtube": {"player_client": ["tv"]}},
+            "http_headers": {"User-Agent": "AppleTV6,2/11.1"}
+        },
     ]
     
     for i, method in enumerate(methods):
@@ -1522,9 +1563,6 @@ def try_multiple_download_methods(url: str, fmt_choice: str, quality_choice: str
                 "quiet": True,
                 "nocheckcertificate": True,
                 "outtmpl": "-",
-                "http_headers": {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                },
                 **method
             }
             
@@ -1538,7 +1576,9 @@ def try_multiple_download_methods(url: str, fmt_choice: str, quality_choice: str
                     }]
                 })
             
-            with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            # Usar arquivo temporário com nome explícito
+            import tempfile
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4' if fmt_choice == 'mp4' else '.mp3') as tmp_file:
                 ydl_opts["outtmpl"] = tmp_file.name
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([url])
@@ -1546,16 +1586,20 @@ def try_multiple_download_methods(url: str, fmt_choice: str, quality_choice: str
                 with open(tmp_file.name, 'rb') as f:
                     file_content = f.read()
                 
-                os.unlink(tmp_file.name)
+                # Obter informações do vídeo
                 info = ydl.extract_info(url, download=False)
                 filename = ydl.prepare_filename(info)
+                
+                # Limpar arquivo temporário
+                import os
+                os.unlink(tmp_file.name)
                 
                 return True, file_content, filename, f"Sucesso com método {i+1}"
                 
         except Exception as e:
             continue
     
-    return False, None, f"Todos os métodos falharam para: {url}", ""        
+    return False, None, f"Todos os métodos falharam para: {url}", ""     
 
 # ============================================================
 # INTERFACE PRINCIPAL - ATUALIZADA
