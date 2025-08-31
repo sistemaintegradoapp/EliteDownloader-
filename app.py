@@ -1472,44 +1472,74 @@ def run_ytdlp(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, byt
     progress_hook = DownloadProgressHook()
     
     try:
-        # Configuração MÍNIMA
+        # Configurações (mantenha suas configurações atuais)
         ydl_opts = {
+            "noplaylist": True,
             "quiet": True,
-            "no_warnings": True,
-            "format": "best" if fmt_choice == "mp4" else "bestaudio/best",
+            "nocheckcertificate": True,
+            "progress_hooks": [progress_hook.hook],
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            },
         }
         
+        # Configurar formato
         if fmt_choice == "audio (mp3)":
-            ydl_opts["postprocessors"] = [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-            }]
+            ydl_opts.update({
+                "format": "bestaudio/best",
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": '192'
+                }]
+            })
+        else:
+            ydl_opts.update({
+                "format": "best[height<=720]",
+                "merge_output_format": "mp4",
+            })
         
-        # Nome de arquivo simples
-        filename = f"download.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
+        progress_hook.progress_bar = st.progress(0)
+        progress_hook.status_text = st.empty()
         
-        # Download direto
-        import tempfile
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.tmp') as tmp_file:
-            ydl_opts["outtmpl"] = tmp_file.name
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # CORREÇÃO: Extrair informações de forma segura
+            info = ydl.extract_info(url, download=False)
             
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-            
-            # Verificar se o arquivo tem conteúdo
-            file_size = os.path.getsize(tmp_file.name)
-            if file_size > 1024:  # Pelo menos 1KB
-                with open(tmp_file.name, 'rb') as f:
-                    file_content = f.read()
-                
-                os.unlink(tmp_file.name)
-                return True, file_content, filename, f"Download concluído ({file_size} bytes)"
+            # VERIFICAÇÃO SEGURA - isso evita o erro "string indices must be integers"
+            if isinstance(info, dict):
+                title = info.get('title', 'video')
+                # Limpar caracteres inválidos do filename
+                import re
+                title = re.sub(r'[<>:"/\\|?*]', '', title)
+                filename = f"{title}.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
             else:
-                os.unlink(tmp_file.name)
-                return False, None, "Arquivo muito pequeno - possível bloqueio", ""
+                # Fallback se info não for um dicionário
+                filename = f"download.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
             
+            # Fazer download para arquivo temporário
+            import tempfile
+            with tempfile.NamedTemporaryFile(delete=False, 
+                                           suffix='.mp3' if fmt_choice == 'audio (mp3)' else '.mp4') as tmp_file:
+                ydl_opts["outtmpl"] = tmp_file.name
+                
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl_download:
+                    ydl_download.download([url])
+                
+                # Verificar se o arquivo foi criado corretamente
+                if os.path.exists(tmp_file.name) and os.path.getsize(tmp_file.name) > 0:
+                    with open(tmp_file.name, 'rb') as f:
+                        file_content = f.read()
+                    
+                    os.unlink(tmp_file.name)
+                    return True, file_content, filename, "Download concluído!"
+                else:
+                    os.unlink(tmp_file.name)
+                    return False, None, "Arquivo vazio ou não criado", ""
+                    
     except Exception as e:
-        return False, None, f"Erro no download: {str(e)}", ""
+        error_msg = str(e)
+        return False, None, f"Erro: {error_msg}", ""
 
 def try_simple_download(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, str]:
     """Método ultra-simples para contornar throttling extremo"""
