@@ -1597,7 +1597,7 @@ def try_simple_download(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, st
                 with open(tmp_file.name, 'rb') as f:
                     file_content = f.read()
                 
-                filename = f"download{'
+                filename = f"download{'.mp3' if fmt_choice == 'audio (mp3)' else '.mp4'}"
             
             import os
             os.unlink(tmp_file.name)
