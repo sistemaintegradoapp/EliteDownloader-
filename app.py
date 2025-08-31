@@ -403,7 +403,7 @@ def show_free_downloads_ui():
                 st.error("❌ " + message)
                 st.info("💡 Tente um link diferente ou espere alguns minutos")
 
- st.warning("""
+st.warning("""
     **⚠️ Atenção:** Downloads do YouTube podem falhar devido a:
     - Bloqueios anti-bot do YouTube
     - Vídeos muito recentes ou populares
