@@ -391,6 +391,14 @@ def show_free_downloads_ui():
             else:
                 st.error(f"❌ Erro no download: {filename}")
 
+st.warning("""
+    **⚠️ Atenção:** Alguns vídeos do YouTube podem ter proteção contra download.
+    Se encontrar erro, tente:
+    - Links de canais menores funcionam melhor
+    - Vídeos muito recentes podem ter restrições
+    - Tente novamente em alguns minutos
+    """)
+
 # ============================================================
 # SISTEMA DE CHAVES E PAGAMENTOS - CORRIGIDO
 # ============================================================
@@ -1438,127 +1446,114 @@ class YDLLogger:
     def error(self, msg): self.lines.append("ERR: "+str(msg))
 
 def run_ytdlp(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, bytes, str, str]:
-    """Baixa o conteúdo em memória com soluções para throttling do YouTube"""
+    """Baixa o conteúdo com headers que parecem um navegador real"""
     progress_hook = DownloadProgressHook()
     
     try:
-        # Configurações AVANÇADAS para evitar throttling
+        # ROTACIONAR USER-AGENTS para evitar detecção
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        ]
+        
+        import random
+        user_agent = random.choice(user_agents)
+        
         ydl_opts = {
             "noplaylist": True,
-            "quiet": False,  # Mudar para False para ver logs detalhados
+            "quiet": True,
             "nocheckcertificate": True,
             "progress_hooks": [progress_hook.hook],
             "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.5",
-                "Accept-Encoding": "gzip, deflate",
+                "User-Agent": user_agent,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Accept-Encoding": "gzip, deflate, br",
                 "Connection": "keep-alive",
                 "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+                "Cache-Control": "max-age=0",
             },
-            # Configurações específicas para evitar throttling
+            # Configurações para evitar bloqueio
             "extractor_args": {
                 "youtube": {
                     "player_client": ["android", "web"],
-                    "player_skip": ["config", "webplayer", "js"],
                 }
             },
-            "compat_opts": [
-                "no-youtube-unavailable-videos",
-                "no-youtube-prefer-utc-upload-date"
-            ],
-            "throttledratelimit": 0,  # Ignorar limite de rate limiting
+            "compat_opts": ["no-youtube-unavailable-videos"],
+            "retries": 10,
+            "fragment_retries": 10,
+            "skip_unavailable_fragments": True,
+            "ignoreerrors": True,
         }
         
-        # Configurar formato
+        # Configurar formato (SIMPLIFICADO - evitar merge que pode falhar)
         if fmt_choice == "audio (mp3)":
             ydl_opts.update({
-                "format": "bestaudio/best",
+                "format": "bestaudio",
                 "postprocessors": [{
-                    "key": "FFmpegExtractAudio",
+                    "key": "FFmpegExtractAudio", 
                     "preferredcodec": "mp3",
-                    "preferredquality": '192'
                 }]
             })
         else:
-            # Para vídeo, usar formatos específicos que funcionam melhor
-            format_map = {
-                "best": "bestvideo[height<=1080]+bestaudio/best",
-                "1080p": "bestvideo[height<=1080]+bestaudio/best",
-                "720p": "bestvideo[height<=720]+bestaudio/best", 
-                "480p": "bestvideo[height<=480]+bestaudio/best",
-                "360p": "bestvideo[height<=360]+bestaudio/best"
-            }
+            # Usar formatos que não requerem merge (evitar problemas)
             ydl_opts.update({
-                "format": format_map.get(quality_choice, "bestvideo+bestaudio/best"),
-                "merge_output_format": "mp4",
+                "format": "best[height<=720][ext=mp4]/best[height<=720]",
             })
         
-        # Barra de progresso
         progress_hook.progress_bar = st.progress(0)
         progress_hook.status_text = st.empty()
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Extrair informações primeiro
-            info = ydl.extract_info(url, download=False)
+            # Tentar extrair info primeiro
+            try:
+                info = ydl.extract_info(url, download=False)
+                if isinstance(info, dict):
+                    title = info.get('title', 'video')[:50]
+                    title = "".join(c for c in title if c.isalnum() or c in ' _-')
+                else:
+                    title = "video"
+            except:
+                title = "video"
             
-            # Obter título seguro para filename
-            if isinstance(info, dict):
-                title = info.get('title', 'video_download')
-                # Limpar caracteres problemáticos
-                import re
-                title = re.sub(r'[<>:"/\\|?*]', '', title)
-                title = title.replace(' ', '_')[:40]  # Nome mais curto
-            else:
-                title = "video_download"
+            filename = f"{title}.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
             
-            extension = ".mp3" if fmt_choice == "audio (mp3)" else ".mp4"
-            filename = f"{title}{extension}"
-            
-            # Fazer o download para arquivo temporário
+            # Download para arquivo temporário
             import tempfile
-            with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp_file:
+            with tempfile.NamedTemporaryFile(delete=False, 
+                                           suffix='.mp3' if fmt_choice == 'audio (mp3)' else '.mp4') as tmp_file:
                 ydl_opts["outtmpl"] = tmp_file.name
                 
-                # Fazer download com timeout
-                import signal
-                class TimeoutException(Exception):
-                    pass
-                
-                def timeout_handler(signum, frame):
-                    raise TimeoutException("Download timeout")
-                
-                # Set timeout para 300 segundos (5 minutos)
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(300)
-                
                 try:
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl_download:
-                        result = ydl_download.download([url])
+                    ydl.download([url])
                     
-                    # Verificar se o arquivo tem conteúdo
+                    # Verificar se download foi bem sucedido
+                    import os
                     file_size = os.path.getsize(tmp_file.name)
                     if file_size == 0:
-                        raise Exception("Arquivo vazio - throttling ativo")
+                        raise Exception("Arquivo vazio - possivel bloqueio")
                     
                     with open(tmp_file.name, 'rb') as f:
                         file_content = f.read()
                     
-                    return True, file_content, filename, f"Download concluído ({file_size} bytes)"
-                    
-                except TimeoutException:
-                    return False, None, "Timeout no download - muito lento", ""
-                finally:
-                    signal.alarm(0)  # Cancelar alarme
-                    # Limpar arquivo temporário
-                    import os
                     os.unlink(tmp_file.name)
-            
+                    return True, file_content, filename, "Download concluído!"
+                    
+                except Exception as download_error:
+                    os.unlink(tmp_file.name)
+                    raise download_error
+                    
     except Exception as e:
         error_msg = str(e)
-        # Tentar método alternativo se for throttling
-        if "throttl" in error_msg.lower() or "0.00B" in error_msg:
-            return try_simple_download(url, fmt_choice)
+        # Se for bloqueio de bot, tentar método alternativo
+        if "bot" in error_msg.lower() or "sign in" in error_msg.lower():
+            return try_cookie_method(url, fmt_choice)
         return False, None, f"Erro: {error_msg}", ""
 
 def try_simple_download(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, str]:
@@ -1606,6 +1601,51 @@ def try_simple_download(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, st
             
     except Exception as e:
         return False, None, f"Erro no método alternativo: {str(e)}", ""     
+
+def try_cookie_method(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, str]:
+    """Tenta método alternativo para contornar bloqueio de bot"""
+    try:
+        # Configuração mais simples possível
+        ydl_opts = {
+            "noplaylist": True,
+            "quiet": True,
+            "nocheckcertificate": True,
+            "format": "worst" if fmt_choice == "mp4" else "worstaudio/worst",
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-A205U) AppleWebKit/537.36",
+            },
+            "ignoreerrors": True,
+            "no_warnings": True,
+        }
+        
+        if fmt_choice == "audio (mp3)":
+            ydl_opts["postprocessors"] = [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+            }]
+        
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, 
+                                       suffix='.mp3' if fmt_choice == 'audio (mp3)' else '.mp4') as tmp_file:
+            ydl_opts["outtmpl"] = tmp_file.name
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+            
+            import os
+            file_size = os.path.getsize(tmp_file.name)
+            if file_size > 1024:  # Pelo menos 1KB de conteúdo
+                with open(tmp_file.name, 'rb') as f:
+                    file_content = f.read()
+                
+                os.unlink(tmp_file.name)
+                return True, file_content, f"download.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}", "Download por método alternativo"
+            else:
+                os.unlink(tmp_file.name)
+                return False, None, "Bloqueio muito restritivo - YouTube detectou como bot", ""
+                
+    except Exception as e:
+        return False, None, f"Método alternativo falhou: {str(e)}", ""        
 
 # ============================================================
 # INTERFACE PRINCIPAL - ATUALIZADA
