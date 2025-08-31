@@ -354,16 +354,25 @@ def show_free_downloads_ui():
     
     st.write("### ⬇️ Faça seu download gratuito")
     
-    free_url = st.text_input("Cole o link do vídeo:", key="free_url", 
+    import time
+    unique_suffix = f"_{int(time.time())}"
+    
+    free_url = st.text_input("Cole o link do vídeo:", 
+                           key=f"free_url{unique_suffix}", 
                            placeholder="https://www.youtube.com/watch?v=...")
     
     col1, col2 = st.columns(2)
     with col1:
-        free_fmt = st.selectbox("Formato:", ["mp4", "audio (mp3)"], key="free_fmt")
+        free_fmt = st.selectbox("Formato:", ["mp4", "audio (mp3)"], 
+                              key=f"free_fmt{unique_suffix}")
     with col2:
-        free_quality = st.selectbox("Qualidade:", ["best", "720p", "480p", "360p"], key="free_quality")
+        free_quality = st.selectbox("Qualidade:", ["best", "720p", "480p", "360p"], 
+                                  key=f"free_quality{unique_suffix}")
     
-    if st.button("🚀 Download Gratuito", key="btn_free_download", type="secondary"):
+    if st.button("🚀 Download Gratuito", 
+               key=f"btn_free_download{unique_suffix}", 
+               type="secondary"):
+                   
         if not free_url.strip():
             st.error("Por favor, cole um link válido.")
             return
@@ -1344,12 +1353,16 @@ def show_pending_payments():
 def register_email():
     st.subheader("📋 Finalizar Cadastro")
     
-    email = st.text_input("Digite seu email:", placeholder="seu.email@exemplo.com")
+    import time
+    unique_suffix = f"_{int(time.time())}"
     
-    # Container para mensagens de pagamento
-    payment_container = st.container()
+    email = st.text_input("Digite seu email:", 
+                        placeholder="seu.email@exemplo.com",
+                        key=f"register_email{unique_suffix}")
     
-    if st.button("Confirmar e Pagar", type="primary"):
+    if st.button("Confirmar e Pagar", 
+               key=f"confirm_pay_btn{unique_suffix}", 
+               type="primary"):
         if not email or not is_valid_email(email):
             with payment_container:
                 st.error("Por favor, insira um email válido.")
@@ -1396,6 +1409,10 @@ def register_email():
 def key_login_ui():
     st.sidebar.subheader("🔑 Acesso com Chave")
     
+    # Usar keys únicas baseadas no timestamp
+    import time
+    unique_suffix = f"_{int(time.time())}"
+    
     if st.session_state.get("key_valid"):
         st.sidebar.success(f"✅ Acesso ativo")
         st.sidebar.info(f"Email: {st.session_state.get('user_email')}")
@@ -1403,27 +1420,29 @@ def key_login_ui():
         status, key_data = check_key_status(st.session_state.user_email)
         st.sidebar.info(f"Status: {status}")
         
-        # Botão para testar credenciais do Zoho
-        #if st.sidebar.button("📧 Testar Configuração de Email", key="test_email_config"):
-          #test_zoho_credentials()
-        
         col1, col2 = st.sidebar.columns(2)
         
         with col2:
-            if st.button("📋 Ver Status", width='stretch'):
+            if st.button("📋 Ver Status", key=f"status_btn{unique_suffix}", use_container_width=True):
                 status, key_data = check_key_status(st.session_state.user_email)
                 st.sidebar.info(f"Status atual: {status}")
         
-        if st.sidebar.button("🚪 Sair", width='stretch'):
+        if st.sidebar.button("🚪 Sair", key=f"logout_btn{unique_suffix}", use_container_width=True):
             for k in ["key_valid", "user_key", "user_email"]:
                 st.session_state.pop(k, None)
             st.rerun()
         return
     
-    email_input = st.sidebar.text_input("E-mail", value=st.session_state.get("user_email", ""))
-    key_input = st.sidebar.text_input("Chave de Acesso", type="password")
+    # INPUTS COM KEYS ÚNICAS
+    email_input = st.sidebar.text_input("E-mail", 
+                                      value=st.session_state.get("user_email", ""),
+                                      key=f"email_input{unique_suffix}")
+    
+    key_input = st.sidebar.text_input("Chave de Acesso", 
+                                    type="password",
+                                    key=f"key_input{unique_suffix}")
 
-    if st.sidebar.button("✅ Validar Chave"):
+    if st.sidebar.button("✅ Validar Chave", key=f"validate_btn{unique_suffix}"):
         if not email_input.strip() or not key_input.strip():
             st.sidebar.error("Informe email e chave.")
             return
@@ -1446,9 +1465,9 @@ def key_login_ui():
         st.sidebar.success("Acesso liberado!")
         st.rerun()
     
-    # BOTÃO DE TESTE DE EMAIL TAMBÉM PARA USUÁRIOS NÃO LOGADOS
+    # BOTÃO DE TESTE COM KEY ÚNICA
     st.sidebar.markdown("---")
-    if st.sidebar.button("⚙️ Testar Configuração de Email", key="test_email_guest"):
+    if st.sidebar.button("⚙️ Testar Configuração de Email", key=f"test_email_btn{unique_suffix}"):
         test_zoho_credentials()
 
 # ============================================================
