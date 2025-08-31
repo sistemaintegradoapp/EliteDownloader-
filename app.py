@@ -1678,7 +1678,7 @@ def main():
     with st.sidebar:
             st.success("✅ Sidebar carregada!")
             st.write("Teste de conteúdo na sidebar")
-        except Exception as e:
+            except Exception as e:
             st.error(f"Erro na sidebar: {e}")
         
 # Inicializar todas as variáveis de sessão primeiro
