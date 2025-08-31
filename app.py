@@ -1662,13 +1662,48 @@ def extract_youtube_id(url: str) -> str:
 # INTERFACE PRINCIPAL - ATUALIZADA
 # ============================================================
 def main():
-    # DEBUG: Verificar se sidebar está funcionando
+    # ============================================================
+    # DEBUG DA SIDEBAR - VERIFICAR SE ESTÁ CARREGANDO
+    # ============================================================
+    st.sidebar.markdown("""
+    <style>
+        .sidebar-debug {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            text-align: center;
+        }
+    </style>
+    <div class="sidebar-debug">
+        <strong>🔧 SIDEBAR DEBUG</strong><br>
+        ✅ Sidebar carregada com sucesso!
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.sidebar.write("**📊 Informações de Debug:**")
+    st.sidebar.write(f"**Python:** {sys.version.split()[0]}")
+    st.sidebar.write(f"**Streamlit:** {st.__version__}")
+    st.sidebar.write(f"**YT-DLP Disponível:** {YTDLP_OK}")
+    
+    # Testar se elementos estão funcionando
+    if st.sidebar.button("🧪 Testar Sidebar", key="debug_sidebar_btn"):
+        st.sidebar.success("✅ Botão da sidebar funciona!")
+    
+    # ============================================================
+    # CONFIGURAÇÕES PRINCIPAIS DA SIDEBAR
+    # ============================================================
+    st.sidebar.title("⚙️ Configurações")
+    
+    # DEBUG: Verificar se a função de login está sendo chamada
+    st.sidebar.write("**🔑 Debug Login UI:**")
     try:
-        with st.sidebar:
-            st.success("✅ Sidebar carregada!")
-            st.write("Teste de conteúdo na sidebar")
+        key_login_ui()
+        st.sidebar.success("✅ key_login_ui() executada com sucesso!")
     except Exception as e:
-        st.error(f"Erro na sidebar: {e}")
+        st.sidebar.error(f"❌ Erro em key_login_ui(): {e}")
+    
         
 # Inicializar todas as variáveis de sessão primeiro
     if 'key_valid' not in st.session_state:
