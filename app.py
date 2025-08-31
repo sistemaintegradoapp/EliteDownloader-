@@ -364,7 +364,7 @@ def show_free_downloads_ui():
         free_quality = st.selectbox("Qualidade:", ["best", "720p", "480p", "360p"], key="free_quality")
     
     if st.button("🚀 Download Gratuito", key="btn_free_download", type="secondary"):
-    if not free_url.strip():
+        if not free_url.strip():
         st.error("Por favor, cole um link válido.")
         return
         
