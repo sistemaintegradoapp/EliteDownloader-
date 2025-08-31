@@ -1662,24 +1662,13 @@ def extract_youtube_id(url: str) -> str:
 # INTERFACE PRINCIPAL - ATUALIZADA
 # ============================================================
 def main():
-    
-# DEBUG: Verificar se os está acessível
-    #try:
-        #print(f"os disponível: {os.__name__}")
-        #print(f"Diretório atual: {os.getcwd()}")
-    #except NameError as e:
-        #print(f"ERRO: os não disponível - {e}")
-        # Reimportar urgentemente
-        #import os
-        #import sys
-        #sys.modules['os'] = os
-        #print("os reimportado com sucesso")
- try:
-    with st.sidebar:
+    # DEBUG: Verificar se sidebar está funcionando
+    try:
+        with st.sidebar:
             st.success("✅ Sidebar carregada!")
             st.write("Teste de conteúdo na sidebar")
-            except Exception as e:
-            st.error(f"Erro na sidebar: {e}")
+    except Exception as e:
+        st.error(f"Erro na sidebar: {e}")
         
 # Inicializar todas as variáveis de sessão primeiro
     if 'key_valid' not in st.session_state:
