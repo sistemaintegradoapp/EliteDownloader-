@@ -4,6 +4,6 @@ yt-dlp==2024.4.9
 feedparser==6.0.10
 pydub==0.25.1
 beautifulsoup4==4.12.3
-mercadopago==2.0.1
+mercadopago==2.3.0
 pyperclip==1.8.2
 openai-whisper==20231117
