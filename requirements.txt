@@ -1,0 +1,8 @@
+streamlit==1.32.0
+requests==2.31.0
+yt-dlp==2024.4.9
+feedparser==6.0.10
+pydub==0.25.1
+beautifulsoup4==4.12.3
+mercadopago==2.0.1
+pyperclip==1.8.2
