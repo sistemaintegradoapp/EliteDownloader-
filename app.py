@@ -1447,113 +1447,77 @@ class YDLLogger:
     def error(self, msg): self.lines.append("ERR: "+str(msg))
 
 def run_ytdlp(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, bytes, str, str]:
-    """Baixa o conteúdo com headers que parecem um navegador real"""
+    """Baixa o conteúdo em memória"""
     progress_hook = DownloadProgressHook()
     
     try:
-        # ROTACIONAR USER-AGENTS para evitar detecção
-        user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        ]
-        
-        import random
-        user_agent = random.choice(user_agents)
-        
+        # Configurações (mantenha suas configurações atuais)
         ydl_opts = {
             "noplaylist": True,
             "quiet": True,
             "nocheckcertificate": True,
             "progress_hooks": [progress_hook.hook],
             "http_headers": {
-                "User-Agent": user_agent,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Sec-Fetch-User": "?1",
-                "Cache-Control": "max-age=0",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             },
-            # Configurações para evitar bloqueio
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "web"],
-                }
-            },
-            "compat_opts": ["no-youtube-unavailable-videos"],
-            "retries": 10,
-            "fragment_retries": 10,
-            "skip_unavailable_fragments": True,
-            "ignoreerrors": True,
         }
         
-        # Configurar formato (SIMPLIFICADO - evitar merge que pode falhar)
+        # Configurar formato
         if fmt_choice == "audio (mp3)":
             ydl_opts.update({
-                "format": "bestaudio",
+                "format": "bestaudio/best",
                 "postprocessors": [{
-                    "key": "FFmpegExtractAudio", 
+                    "key": "FFmpegExtractAudio",
                     "preferredcodec": "mp3",
+                    "preferredquality": '192'
                 }]
             })
         else:
-            # Usar formatos que não requerem merge (evitar problemas)
             ydl_opts.update({
-                "format": "best[height<=720][ext=mp4]/best[height<=720]",
+                "format": "best[height<=720]",
+                "merge_output_format": "mp4",
             })
         
         progress_hook.progress_bar = st.progress(0)
         progress_hook.status_text = st.empty()
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Tentar extrair info primeiro
-            try:
-                info = ydl.extract_info(url, download=False)
-                if isinstance(info, dict):
-                    title = info.get('title', 'video')[:50]
-                    title = "".join(c for c in title if c.isalnum() or c in ' _-')
-                else:
-                    title = "video"
-            except:
-                title = "video"
+            # CORREÇÃO: Extrair informações de forma segura
+            info = ydl.extract_info(url, download=False)
             
-            filename = f"{title}.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
+            # VERIFICAÇÃO SEGURA - isso evita o erro "string indices must be integers"
+            if isinstance(info, dict):
+                title = info.get('title', 'video')
+                # Limpar caracteres inválidos do filename
+                import re
+                title = re.sub(r'[<>:"/\\|?*]', '', title)
+                filename = f"{title}.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
+            else:
+                # Fallback se info não for um dicionário
+                filename = f"download.{'mp3' if fmt_choice == 'audio (mp3)' else 'mp4'}"
             
-            # Download para arquivo temporário
+            # Fazer download para arquivo temporário
             import tempfile
             with tempfile.NamedTemporaryFile(delete=False, 
                                            suffix='.mp3' if fmt_choice == 'audio (mp3)' else '.mp4') as tmp_file:
                 ydl_opts["outtmpl"] = tmp_file.name
                 
-                try:
-                    ydl.download([url])
-                    
-                    # Verificar se download foi bem sucedido
-                    file_size = os.path.getsize(tmp_file.name)  # AGORA 'os' ESTÁ DISPONÍVEL
-                    if file_size == 0:
-                        raise Exception("Arquivo vazio - possivel bloqueio")
-                    
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl_download:
+                    ydl_download.download([url])
+                
+                # Verificar se o arquivo foi criado corretamente
+                if os.path.exists(tmp_file.name) and os.path.getsize(tmp_file.name) > 0:
                     with open(tmp_file.name, 'rb') as f:
                         file_content = f.read()
                     
                     os.unlink(tmp_file.name)
                     return True, file_content, filename, "Download concluído!"
-                    
-                except Exception as download_error:
+                else:
                     os.unlink(tmp_file.name)
-                    raise download_error
+                    return False, None, "Arquivo vazio ou não criado", ""
                     
     except Exception as e:
         error_msg = str(e)
-        # Se for bloqueio de bot, tentar método alternativo
-        if "bot" in error_msg.lower() or "sign in" in error_msg.lower():
-            return try_cookie_method(url, fmt_choice)
         return False, None, f"Erro: {error_msg}", ""
 
 def try_simple_download(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, str]:
@@ -1652,16 +1616,16 @@ def try_cookie_method(url: str, fmt_choice: str) -> Tuple[bool, bytes, str, str]
 def main():
     
 # DEBUG: Verificar se os está acessível
-    try:
-        print(f"os disponível: {os.__name__}")
-        print(f"Diretório atual: {os.getcwd()}")
-    except NameError as e:
-        print(f"ERRO: os não disponível - {e}")
+    #try:
+        #print(f"os disponível: {os.__name__}")
+        #print(f"Diretório atual: {os.getcwd()}")
+    #except NameError as e:
+        #print(f"ERRO: os não disponível - {e}")
         # Reimportar urgentemente
-        import os
-        import sys
-        sys.modules['os'] = os
-        print("os reimportado com sucesso")
+        #import os
+        #import sys
+        #sys.modules['os'] = os
+        #print("os reimportado com sucesso")
         
 # Inicializar todas as variáveis de sessão primeiro
     if 'key_valid' not in st.session_state:
