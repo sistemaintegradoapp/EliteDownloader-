@@ -365,12 +365,12 @@ def show_free_downloads_ui():
     
     if st.button("🚀 Download Gratuito", key="btn_free_download", type="secondary"):
         if not free_url.strip():
-        st.error("Por favor, cole um link válido.")
+            st.error("Por favor, cole um link válido.")
         return
         
     if not can_use_free_download():
-        st.error("❌ Você já usou todos os seus downloads gratuitos!")
-        st.info("💡 Assine um plano premium para downloads ilimitados!")
+            st.error("❌ Você já usou todos os seus downloads gratuitos!")
+            st.info("💡 Assine um plano premium para downloads ilimitados!")
         return
     
     with st.spinner("🔄 Tentando download..."):
