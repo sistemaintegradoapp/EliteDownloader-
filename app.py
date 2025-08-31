@@ -1675,7 +1675,7 @@ def main():
         #sys.modules['os'] = os
         #print("os reimportado com sucesso")
  try:
-        with st.sidebar:
+    with st.sidebar:
             st.success("✅ Sidebar carregada!")
             st.write("Teste de conteúdo na sidebar")
     except Exception as e:
