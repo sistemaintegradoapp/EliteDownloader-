@@ -207,50 +207,6 @@ class DownloadProgressHook:
                 self.status_text.text("✅ Download concluído!")    
     
 # ============================================================
-# FUNÇÃO PARA SELEÇÃO DE PASTA - SIMPLIFICADA
-# ============================================================
-def select_download_folder():
-    """Seletor de pasta simplificado que sempre aparece"""
-    st.write("**Selecione onde salvar seus downloads:**")
-    
-    # Opções comuns de pastas
-    common_folders = [
-        os.path.join(os.path.expanduser("~"), "Downloads"),
-        os.path.join(os.path.expanduser("~"), "Desktop"),
-        os.path.join(os.path.expanduser("~"), "Documents"),
-        os.path.join(os.path.expanduser("~"), "Videos")
-    ]
-    
-    selected = st.selectbox(
-        "Pasta padrão:",
-        options=common_folders,
-        format_func=lambda x: x.replace(os.path.expanduser("~"), "~"),
-        key="folder_selector"
-    )
-    
-    # Atualizar sempre que mudar a seleção
-    if selected != st.session_state.get('download_path'):
-        st.session_state.download_path = selected
-        st.success(f"✅ Pasta definida: {selected}")
-    
-    # Opção personalizada
-    st.write("**Ou digite um caminho personalizado:**")
-    custom_path = st.text_input("Caminho completo:", 
-                               value=st.session_state.download_path, 
-                               key="custom_path_input")
-    
-    if custom_path and custom_path != st.session_state.download_path:
-        try:
-            if not os.path.exists(custom_path):
-                os.makedirs(custom_path)
-                st.success(f"📁 Pasta criada: {custom_path}")
-            
-            st.session_state.download_path = custom_path
-            st.success(f"✅ Pasta definida: {custom_path}")
-        except Exception as e:
-            st.error(f"❌ Erro ao acessar pasta: {e}")
-
-# ============================================================
 # Configuração Mercado Pago
 # ============================================================
 PUBLIC_KEY = "APP_USR-488e77a6-23aa-4cde-98da-3c80a9b582af"
@@ -343,7 +299,7 @@ def get_free_downloads_count():
     return st.session_state.free_downloads
 
 # ============================================================
-# SISTEMA DE DOWNLOADS GRATUITOS UI - CORRIGIDO
+# SISTEMA DE DOWNLOADS GRATUITOS UI - ATUALIZADO PARA STREAMLIT CLOUD
 # ============================================================
 def show_free_downloads_ui():
     st.markdown("---")
@@ -361,16 +317,7 @@ def show_free_downloads_ui():
     </div>
     """, unsafe_allow_html=True)
     
-    # PRIMEIRO: SELECIONAR A PASTA DE DESTINO (SEMPRE MOSTRAR)
-    st.write("### 📁 Escolha onde salvar seus arquivos:")
-    
-    if 'download_path' not in st.session_state:
-        st.session_state.download_path = os.path.join(os.path.expanduser("~"), "Downloads")
-    
-    # SEMPRE mostrar o seletor de pasta
-    select_download_folder()
-    
-    st.write("### ⬇️ Agora faça seu download gratuito")
+    st.write("### ⬇️ Faça seu download gratuito")
     
     free_url = st.text_input("Cole o link do vídeo:", key="free_url", 
                            placeholder="https://www.youtube.com/watch?v=...")
@@ -391,50 +338,42 @@ def show_free_downloads_ui():
             st.info("💡 Assine um plano premium para downloads ilimitados!")
             return
         
-        # VERIFICAR SE A PASTA EXISTE
-        if not os.path.exists(st.session_state.download_path):
-            st.error("❌ A pasta de destino não existe! Por favor, selecione uma pasta válida.")
-            return
-            
-        # USAR O DOWNLOAD GRATUITO ANTES DE BAIXAR
         # Área dedicada para o progresso do download
-            download_container = st.container()
+        download_container = st.container()
+        
+        with download_container:
+            st.info("🔄 Iniciando download...")
             
-            with download_container:
-                st.info("🔄 Iniciando download...")
+            # Esta função agora retorna os bytes do arquivo
+            success, file_content, filename, logs = run_ytdlp(
+                free_url, 
+                free_fmt, 
+                free_quality
+            )
+            
+            if success and file_content:
+                # USAR O DOWNLOAD GRATUITO APÓS SUCESSO
+                use_free_download(free_url)
                 
-                # Esta função agora mostrará a barra de progresso automaticamente
-                success, message, logs = run_ytdlp(
-                    free_url, 
-                    st.session_state.download_path, 
-                    free_fmt, 
-                    free_quality
+                # Oferecer download direto via Streamlit
+                file_extension = os.path.splitext(filename)[1]
+                mime_type = "video/mp4" if free_fmt == "mp4" else "audio/mpeg"
+                
+                st.download_button(
+                    label="📥 Clique aqui para baixar o arquivo",
+                    data=file_content,
+                    file_name=filename,
+                    mime=mime_type,
+                    key=f"download_{free_url}"
                 )
                 
-                if success:
-                    # ATUALIZAR O CONTADOR NA MENSAGEM
-                    remaining_after = st.session_state.free_downloads
-                    st.success(f"✅ Download concluído! Restam {remaining_after} downloads gratuitos.")
-                    st.info(f"📁 Salvo em: {st.session_state.download_path}")
-                    
-                    # REMOVER o botão "Abrir pasta" que não funciona
-                    # Em vez disso, mostrar instruções claras
-                    st.markdown("""
-                    **📋 Como acessar seus arquivos:**
-                    - Se você está usando o sistema localmente, os arquivos estão na pasta selecionada acima
-                    - Se você está acessando via web, entre em contato com o suporte para receber seus arquivos
-                    - Arquivo salvo: `{}`
-                    """.format(os.path.basename(message.split(": ")[1] if ": " in message else "arquivo")))
-                    
-                    # Forçar atualização da interface
-                    st.rerun()
-                else:
-                    st.error(f"❌ Erro no download: {message}")
-                    # Se falhou, devolvemos o download gratuito
-                    st.session_state.free_downloads += 1
-                    st.session_state.used_free_downloads -= 1
-                    st.rerun()
-                    
+                # ATUALIZAR O CONTADOR NA MENSAGEM
+                remaining_after = st.session_state.free_downloads
+                st.success(f"✅ Download concluído! Restam {remaining_after} downloads gratuitos.")
+                
+            else:
+                st.error(f"❌ Erro no download: {filename}")
+
 # ============================================================
 # SISTEMA DE CHAVES E PAGAMENTOS - CORRIGIDO
 # ============================================================
@@ -685,9 +624,9 @@ def check_payment_status():
                         # Remover pagamento pendente
                         st.session_state.pending_payments.pop(payment_id, None)
                     else:
-                        st.error("❌ Erro ao enviar email. Entre em contato com o suporte.")
+                        st.error("❌ Erro ao enviar email. Entre em contato conosco.")
                 else:
-                    st.error("❌ Erro ao gerar chave. Entre em contato com o suporte.")
+                    st.error("❌ Erro ao gerar chave. Entre em contato conosco.")
             else:
                 st.error("❌ Informações de pagamento não encontradas.")
         
@@ -1035,7 +974,7 @@ def show_plan_cards():
         </div>
         """, unsafe_allow_html=True)
         
-        if st.button("💳 Assinar Mensal", key="btn_mensal", use_container_width=True):
+        if st.button("💳 Assinar Mensal", key="btn_mensal", width='stretch'):
             st.session_state.selected_plan = "Mensal"
             st.session_state.show_cadastro = True
             st.rerun()
@@ -1056,7 +995,7 @@ def show_plan_cards():
         </div>
         """, unsafe_allow_html=True)
         
-        if st.button("👑 Assinar Vitalício", key="btn_vitalicio", use_container_width=True):
+        if st.button("👑 Assinar Vitalício", key="btn_vitalicio", width='stretch'):
             st.session_state.selected_plan = "Vitalício"
             st.session_state.show_cadastro = True
             st.rerun()
@@ -1105,7 +1044,7 @@ def show_test_drive_option():
     
     with col2:
         if st.button("🔥 TESTAR AGORA - R$ 2,00", key="btn_test_drive", 
-                    use_container_width=True, type="primary"):
+                    width='stretch', type="primary"):
             st.session_state.selected_plan = "TestDrive"
             st.session_state.show_cadastro = True
             st.rerun()
@@ -1430,11 +1369,11 @@ def key_login_ui():
         col1, col2 = st.sidebar.columns(2)
         
         with col2:
-            if st.button("📋 Ver Status", use_container_width=True):
+            if st.button("📋 Ver Status", width='stretch'):
                 status, key_data = check_key_status(st.session_state.user_email)
                 st.sidebar.info(f"Status atual: {status}")
         
-        if st.sidebar.button("🚪 Sair", use_container_width=True):
+        if st.sidebar.button("🚪 Sair", width='stretch'):
             for k in ["key_valid", "user_key", "user_email"]:
                 st.session_state.pop(k, None)
             st.rerun()
@@ -1472,7 +1411,7 @@ def key_login_ui():
         test_zoho_credentials()
 
 # ============================================================
-# SISTEMA DE DOWNLOAD (yt-dlp)
+# SISTEMA DE DOWNLOAD (yt-dlp) - MODIFICADO PARA STREAMLIT CLOUD
 # ============================================================
 class YDLLogger:
     def __init__(self):
@@ -1481,70 +1420,16 @@ class YDLLogger:
     def warning(self, msg): self.lines.append("WARN: "+str(msg))
     def error(self, msg): self.lines.append("ERR: "+str(msg))
 
-def extract_audio_from_video(video_path: str, audio_path: str) -> bool:
-    try:
-        cmd = [
-            'ffmpeg', '-i', video_path, 
-            '-vn', '-acodec', 'pcm_s16le', 
-            '-ar', '16000', '-ac', '1', 
-            '-y', audio_path
-        ]
-        subprocess.run(cmd, check=True, capture_output=True)
-        return True
-    except Exception as e:
-        st.error(f"Erro ao extrair áudio: {e}")
-        return False
-
-def transcribe_with_whisper(audio_path: str) -> str:
-    """Transcreve áudio usando Whisper"""
-    try:
-        import whisper
-        # Carregar o modelo (usando o modelo base para equilibrar velocidade/precisão)
-        model = whisper.load_model("base")
-        
-        # Transcrever o áudio
-        result = model.transcribe(audio_path, language="pt", task="transcribe")
-        
-        return result["text"]
-    except ImportError:
-        return "Erro: Whisper não está instalado. Use: pip install openai-whisper"
-    except Exception as e:
-        return f"Erro na transcrição com Whisper: {e}"
-
-def transcribe_video(video_path: str) -> Tuple[bool, str]:
-    try:
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio:
-            temp_audio_path = temp_audio.name
-        
-        if not extract_audio_from_video(video_path, temp_audio_path):
-            return False, "Falha ao extrair áudio"
-        
-        # Mostrar barra de progresso
-        st.info("Transcrevendo áudio com Whisper...")
-        
-        # Usar Whisper para transcrição
-        transcription = transcribe_with_whisper(temp_audio_path)
-        
-        try:
-            os.unlink(temp_audio_path)
-        except:
-            pass
-        
-        return True, transcription
-        
-    except Exception as e:
-        return False, f"Erro na transcrição: {e}"
-
-def run_ytdlp(url: str, dest: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, str, str]:
-    # Configurar hooks de progresso
+def run_ytdlp(url: str, fmt_choice: str, quality_choice: str) -> Tuple[bool, bytes, str, str]:
+    """Baixa o conteúdo em memória e retorna os bytes do arquivo"""
     progress_hook = DownloadProgressHook()
     
     ydl_opts = {
-        "outtmpl": os.path.join(dest, "%(title)s.%(ext)s"),
         "noplaylist": True,
         "quiet": True,
         "nocheckcertificate": True,
         "progress_hooks": [progress_hook.hook],
+        "outtmpl": "-",  # Output para stdout (em memória)
     }
     
     if fmt_choice == "audio (mp3)":
@@ -1579,11 +1464,29 @@ def run_ytdlp(url: str, dest: str, fmt_choice: str, quality_choice: str) -> Tupl
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
             
-            return True, f"Download concluído: {os.path.basename(filename)}", "".join(logger.lines)
+            # Obter o filename para o nome do arquivo
+            filename = ydl.prepare_filename(info)
+            file_extension = os.path.splitext(filename)[1]
+            
+            # Para streaming em memória, precisamos de uma abordagem diferente
+            # Vamos usar um arquivo temporário em memória
+            with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+                ydl_opts["outtmpl"] = tmp_file.name
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl_download:
+                    ydl_download.download([url])
+                
+                # Ler o conteúdo do arquivo temporário
+                with open(tmp_file.name, 'rb') as f:
+                    file_content = f.read()
+                
+                # Limpar o arquivo temporário
+                os.unlink(tmp_file.name)
+            
+            return True, file_content, filename, "".join(logger.lines)
+            
     except Exception as e:
-        return False, f"Erro: {e}", ""
+        return False, None, f"Erro: {e}", ""
 
 # ============================================================
 # INTERFACE PRINCIPAL - ATUALIZADA
@@ -1592,8 +1495,6 @@ def main():
 # Inicializar todas as variáveis de sessão primeiro
     if 'key_valid' not in st.session_state:
         st.session_state.key_valid = False
-    if 'download_path' not in st.session_state:
-        st.session_state.download_path = os.path.join(os.path.expanduser("~"), "Downloads")
     if 'selected_plan' not in st.session_state:
         st.session_state.selected_plan = None
     if 'show_cadastro' not in st.session_state:
@@ -1611,7 +1512,6 @@ def main():
     if 'pending_payments' not in st.session_state:
         st.session_state.pending_payments = {}
         
-        
     # Inicializar downloads gratuitos
     init_free_downloads()
     
@@ -1626,26 +1526,6 @@ def main():
     with st.sidebar:
         st.title("⚙️ Configurações")
         key_login_ui()
-        
-        if st.session_state.get("key_valid"):
-            st.markdown("---")
-            st.subheader("📂 Pasta de Downloads")
-            
-            st.info(f"Pasta atual: `{st.session_state.download_path}`")
-            
-            # Opção simples para mudar pasta também no sidebar
-            new_path = st.text_input("Alterar pasta:", 
-                                   value=st.session_state.download_path,
-                                   key="sidebar_folder_input")
-            
-            if new_path != st.session_state.download_path:
-                if os.path.isdir(new_path):
-                    st.session_state.download_path = new_path
-                    st.success("✅ Pasta atualizada!")
-                    st.rerun()
-                else:
-                    st.error("❌ Pasta não encontrada!")
-
 
     if st.session_state.get("key_valid"):
         show_main_interface()
@@ -1676,17 +1556,27 @@ def show_main_interface():
                     st.write(f"**Download {i+1}/{len(links)}:** {link}")
                     
                     with st.status(f"Baixando {i+1}/{len(links)}...", state="running"):
-                        success, message, logs = run_ytdlp(
+                        success, file_content, filename, logs = run_ytdlp(
                             link, 
-                            st.session_state.download_path, 
                             fmt_choice, 
                             quality_choice
                         )
                         
-                        if success:
-                            st.success(message)
+                        if success and file_content:
+                            # Oferecer download direto via Streamlit
+                            file_extension = os.path.splitext(filename)[1]
+                            mime_type = "video/mp4" if fmt_choice == "mp4" else "audio/mpeg"
+                            
+                            st.download_button(
+                                label="📥 Clique aqui para baixar o arquivo",
+                                data=file_content,
+                                file_name=filename,
+                                mime=mime_type,
+                                key=f"download_{link}_{i}"
+                            )
+                            st.success("✅ Download concluído!")
                         else:
-                            st.error(message)
+                            st.error(f"❌ Erro no download: {filename}")
     
     with tab2:
         query = st.text_input(
@@ -1759,14 +1649,16 @@ def show_main_interface():
                 
                 max_workers = 3 if parallel else 1
                 with ThreadPoolExecutor(max_workers=max_workers) as ex:
-                    futs = [ex.submit(
-                        run_ytdlp, 
-                        st.session_state.video_results[idx]['url'],
-                        st.session_state.download_path,
-                        fmt_choice, 
-                        quality_choice,
-                        False
-                    ) for idx in indices]
+                    futs = []
+                    for idx in indices:
+                        video_url = st.session_state.video_results[idx]['url']
+                        fut = ex.submit(
+                            run_ytdlp, 
+                            video_url,
+                            fmt_choice, 
+                            quality_choice
+                        )
+                        futs.append((idx, fut))
                     
                     pending = set(futs)
                     while pending:
@@ -1778,17 +1670,27 @@ def show_main_interface():
                             except queue.Empty:
                                 break
                         
-                        done = [f for f in list(pending) if f.done()]
-                        for f in done:
+                        done = [(idx, f) for (idx, f) in list(pending) if f.done()]
+                        for idx, f in done:
                             try:
-                                ok, msg, logs, transcription = f.result()
-                                if ok: 
-                                    st.success(msg)
-                                else: 
-                                    st.error(msg)
+                                ok, file_content, filename, logs = f.result()
+                                if ok and file_content:
+                                    file_extension = os.path.splitext(filename)[1]
+                                    mime_type = "video/mp4" if fmt_choice == "mp4" else "audio/mpeg"
+                                    
+                                    st.download_button(
+                                        label=f"📥 Baixar {filename}",
+                                        data=file_content,
+                                        file_name=filename,
+                                        mime=mime_type,
+                                        key=f"download_selected_{idx}"
+                                    )
+                                    st.success(f"✅ {filename} pronto!")
+                                else:
+                                    st.error(f"❌ Erro: {filename}")
                             except Exception as e:
                                 st.exception(e)
-                            pending.remove(f)
+                            pending.remove((idx, f))
                         
                         time.sleep(0.1)
         else:
@@ -1809,10 +1711,6 @@ def show_welcome_screen():
     show_plan_cards()
     show_test_drive_option()
     
-    #st.markdown("---")
-    #if st.button("⚙️ Testar Configuração de Email", key="test_email_main"):
-        #test_zoho_credentials()
-    
     if st.session_state.get('show_cadastro') and st.session_state.get('selected_plan'):
         register_email()
 
@@ -1825,40 +1723,6 @@ def show_welcome_screen():
         <a href='#' style='color: #666;'>Política de Privacidade</a>
     </div>
     """, unsafe_allow_html=True)    
-
-# ============================================================
-# SISTEMA DE DOWNLOAD - CORRIGIDO
-# ============================================================
-def download_media(url: str, download_path: str = None):
-    if not download_path:
-        download_path = st.session_state.get('download_path', os.path.join(os.path.expanduser("~"), "Downloads"))
-    
-    if not os.path.exists(download_path):
-        os.makedirs(download_path)
-    
-    try:
-        ydl_opts = {
-            'outtmpl': os.path.join(download_path, '%(title)s.%(ext)s'),
-            'quiet': False,
-            'no_warnings': False,
-            'format': 'best[ext=mp4]/best',
-            'merge_output_format': 'mp4',
-            'noplaylist': True,
-            'progress_hooks': [lambda d: download_progress_hook(d)],
-        }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-            return True, filename, info.get('title', 'arquivo')
-    except Exception as e:
-        return False, str(e), None
-
-def download_progress_hook(d):
-    if d['status'] == 'downloading':
-        progress = float(d['_percent_str'].replace('%', '').strip())
-        if 'progress_bar' in st.session_state:
-            st.session_state.progress_bar.progress(progress / 100)
 
 # ============================================================
 # EXECUÇÃO PRINCIPAL
